@@ -1,0 +1,745 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>HTML에서 이미지 URL 추출</title>
+  <style>
+/* ===== Digital Engineering Dark HUD Theme ===== */
+:root{
+  --bg0:#05070b;
+  --bg1:#070b12;
+  --panel: rgba(8, 14, 24, .72);
+  --panel2: rgba(10, 18, 32, .58);
+  --line: rgba(0, 229, 255, .22);
+  --line2: rgba(166, 9, 61, .20);
+  --text:#e8f4ff;
+  --muted: rgba(232,244,255,.72);
+  --dim: rgba(232,244,255,.52);
+
+  --a:#00e5ff;   /* neon cyan */
+  --b:#a6093d;   /* crimson accent */
+  --ok:#46ff9a;
+  --warn:#ffd24a;
+
+  --r:16px;
+  --shadow: 0 18px 60px rgba(0,0,0,.65);
+  --shadow2: 0 10px 30px rgba(0,0,0,.55);
+
+  --gridA: rgba(0,229,255,.08);
+  --gridB: rgba(166,9,61,.06);
+
+  --scan: rgba(255,255,255,.05);
+  --noise: 0.05;
+}
+
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;
+  color:var(--text);
+  font-family: Pretendard Variable, system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans KR", sans-serif;
+  background:
+    radial-gradient(1200px 700px at 15% 12%, rgba(0,229,255,.10), transparent 55%),
+    radial-gradient(1000px 600px at 85% 18%, rgba(166,9,61,.10), transparent 55%),
+    radial-gradient(900px 540px at 65% 95%, rgba(0,229,255,.06), transparent 60%),
+    linear-gradient(180deg, var(--bg1), var(--bg0));
+  overflow-x:hidden;
+}
+
+/* subtle grid */
+body::before{
+  content:"";
+  position:fixed; inset:0;
+  pointer-events:none;
+  background:
+    linear-gradient(var(--gridA) 1px, transparent 1px) 0 0/ 40px 40px,
+    linear-gradient(90deg, var(--gridA) 1px, transparent 1px) 0 0/ 40px 40px,
+    linear-gradient(var(--gridB) 1px, transparent 1px) 0 0/ 160px 160px,
+    linear-gradient(90deg, var(--gridB) 1px, transparent 1px) 0 0/ 160px 160px;
+  opacity:.65;
+  filter: blur(.0px);
+}
+
+/* scanlines + vignette */
+body::after{
+  content:"";
+  position:fixed; inset:0;
+  pointer-events:none;
+  background:
+    repeating-linear-gradient(
+      180deg,
+      rgba(255,255,255,0) 0px,
+      rgba(255,255,255,0) 2px,
+      var(--scan) 3px
+    ),
+    radial-gradient(1400px 900px at 50% 50%, transparent 55%, rgba(0,0,0,.65) 100%);
+  opacity:.55;
+  mix-blend-mode: overlay;
+}
+
+/* container */
+main, body > :not(script):not(style){
+  max-width: 1020px;
+  margin: 0 auto;
+}
+
+h1{
+  margin: 34px 16px 10px;
+  font-size: 28px;
+  letter-spacing:.2px;
+  text-shadow: 0 0 12px rgba(0,229,255,.18);
+}
+
+p.hint{
+  margin: 0 16px 18px;
+  color: var(--muted);
+  line-height:1.6;
+}
+
+/* HUD topbar (injected by JS) */
+.hud-topbar{
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  margin: 0;
+  padding: 10px 16px;
+  backdrop-filter: blur(10px);
+  background: linear-gradient(180deg, rgba(5,7,11,.92), rgba(5,7,11,.55));
+  border-bottom: 1px solid rgba(0,229,255,.18);
+  display:flex;
+  align-items:center;
+  gap:10px;
+}
+
+.hud-topbar .brand{
+  font-weight: 700;
+  letter-spacing: .5px;
+  color: var(--text);
+}
+.hud-topbar .brand span{
+  color: var(--a);
+  text-shadow: 0 0 14px rgba(0,229,255,.25);
+}
+
+.hud-pill{
+  border: 1px solid rgba(0,229,255,.26);
+  background: rgba(8,14,24,.55);
+  color: var(--muted);
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 12px;
+  display:flex;
+  align-items:center;
+  gap:8px;
+  box-shadow: 0 0 0 1px rgba(0,229,255,.08) inset;
+}
+
+.hud-dot{
+  width:8px;height:8px;border-radius:999px;
+  background: var(--ok);
+  box-shadow: 0 0 10px rgba(70,255,154,.25);
+}
+
+textarea{
+  width: calc(100% - 32px);
+  margin: 0 16px;
+  height: 240px;
+  padding: 14px 14px;
+  color: var(--text);
+  border-radius: var(--r);
+  border: 1px solid rgba(0,229,255,.20);
+  background: linear-gradient(180deg, rgba(8,14,24,.70), rgba(8,14,24,.45));
+  box-shadow: var(--shadow2), 0 0 0 1px rgba(166,9,61,.08) inset;
+  outline: none;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Cascadia Mono", monospace;
+  font-size: 13px;
+  line-height: 1.55;
+  resize: vertical;
+}
+
+textarea:focus{
+  border-color: rgba(0,229,255,.55);
+  box-shadow:
+    var(--shadow2),
+    0 0 0 4px rgba(0,229,255,.10),
+    0 0 22px rgba(0,229,255,.12);
+}
+
+.row{
+  display:flex;
+  gap:10px;
+  flex-wrap:wrap;
+  margin: 12px 16px 18px;
+}
+
+button{
+  border: 1px solid rgba(0,229,255,.22);
+  color: var(--text);
+  background: rgba(8,14,24,.62);
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-size: 14px;
+  cursor: pointer;
+  box-shadow: 0 0 0 1px rgba(0,229,255,.08) inset;
+  transition: transform .12s ease, border-color .12s ease, box-shadow .12s ease, background .12s ease;
+}
+
+button:hover{
+  transform: translateY(-1px);
+  border-color: rgba(0,229,255,.55);
+  box-shadow: 0 0 0 1px rgba(0,229,255,.12) inset, 0 0 18px rgba(0,229,255,.12);
+  background: rgba(10,18,32,.72);
+}
+
+button:active{
+  transform: translateY(0px) scale(.99);
+}
+
+button.secondary{
+  border-color: rgba(166,9,61,.28);
+  box-shadow: 0 0 0 1px rgba(166,9,61,.10) inset;
+}
+button.secondary:hover{
+  border-color: rgba(166,9,61,.55);
+  box-shadow: 0 0 0 1px rgba(166,9,61,.12) inset, 0 0 18px rgba(166,9,61,.10);
+}
+
+button.ghost{
+  background: transparent;
+  border-color: rgba(232,244,255,.18);
+  color: var(--muted);
+}
+
+#meta{
+  margin: 0 16px 14px;
+  padding: 12px 14px;
+  border-radius: var(--r);
+  border: 1px solid rgba(0,229,255,.18);
+  background: linear-gradient(180deg, rgba(8,14,24,.62), rgba(8,14,24,.38));
+  color: var(--muted);
+  white-space: pre-wrap;
+  box-shadow: var(--shadow2);
+  position: relative;
+  overflow:hidden;
+}
+
+#meta::before{
+  content:"";
+  position:absolute; inset:0;
+  background:
+    linear-gradient(90deg, transparent, rgba(0,229,255,.12), transparent);
+  transform: translateX(-60%);
+  animation: sweep 3.6s linear infinite;
+  opacity:.55;
+}
+@keyframes sweep{
+  0%{transform:translateX(-60%)}
+  100%{transform:translateX(160%)}
+}
+
+.grid{
+  display:grid;
+  grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
+  gap: 14px;
+  padding: 0 16px 60px;
+}
+
+.card{
+  position:relative;
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(8,14,24,.72), rgba(8,14,24,.46));
+  border: 1px solid rgba(0,229,255,.16);
+  box-shadow: var(--shadow2);
+  overflow:hidden;
+}
+
+.card::before{
+  content:"";
+  position:absolute; inset:-2px;
+  background:
+    linear-gradient(90deg, rgba(0,229,255,.0), rgba(0,229,255,.20), rgba(166,9,61,.18), rgba(0,229,255,.0));
+  opacity:.65;
+  filter: blur(10px);
+  transform: translateX(-60%);
+  animation: glowwalk 4.8s linear infinite;
+  pointer-events:none;
+}
+@keyframes glowwalk{
+  0%{transform:translateX(-60%)}
+  100%{transform:translateX(160%)}
+}
+
+.card .inner{
+  position:relative;
+  padding: 12px;
+  z-index:1;
+}
+
+.tag{
+  display:inline-flex;
+  gap:8px;
+  align-items:center;
+  font-size: 12px;
+  color: var(--muted);
+  border: 1px solid rgba(0,229,255,.20);
+  background: rgba(0,229,255,.06);
+  padding: 4px 10px;
+  border-radius: 999px;
+  letter-spacing: .2px;
+}
+.tag .chip{
+  width:8px; height:8px; border-radius:999px;
+  background: var(--a);
+  box-shadow: 0 0 10px rgba(0,229,255,.28);
+}
+
+.preview{
+  margin-top: 10px;
+  border-radius: 14px;
+  overflow:hidden;
+  background: rgba(255,255,255,.03);
+  border: 1px solid rgba(232,244,255,.08);
+}
+
+img, video{
+  width:100%;
+  display:block;
+}
+
+.url{
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: var(--dim);
+  word-break: break-all;
+}
+
+.btns{
+  display:flex;
+  gap:8px;
+  flex-wrap:wrap;
+  margin-top: 10px;
+}
+
+.btns button{
+  padding: 8px 10px;
+  font-size: 12px;
+  border-radius: 10px;
+}
+
+/* toast (injected by JS) */
+.toast{
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 9999;
+  min-width: 260px;
+  max-width: min(520px, calc(100vw - 32px));
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(0,229,255,.22);
+  background: rgba(8,14,24,.85);
+  color: var(--text);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(10px);
+  opacity:0;
+  transform: translateY(10px);
+  transition: opacity .18s ease, transform .18s ease;
+}
+.toast.show{
+  opacity:1;
+  transform: translateY(0px);
+}
+.toast small{
+  display:block;
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+/* scrollbar */
+*::-webkit-scrollbar{height:10px;width:10px}
+*::-webkit-scrollbar-thumb{
+  background: rgba(0,229,255,.18);
+  border: 2px solid rgba(5,7,11,.65);
+  border-radius: 999px;
+}
+*::-webkit-scrollbar-track{background: rgba(5,7,11,.65)}
+
+/* reduced motion */
+@media (prefers-reduced-motion: reduce){
+  *{animation:none !important; transition:none !important}
+  #meta::before, .card::before{display:none}
+}
+
+  </style>
+</head>
+<body>
+  <h1>HTML 붙여넣기 → 이미지/비디오 URL 추출</h1>
+  <p class="hint">
+    “다운로더” 같은 거창한 거 말고, <b>네가 이미 복사한 HTML 안에 들어있는 src URL</b>을 뽑아주는 도구입니다.
+    권한 없는 콘텐츠로 남의 저작권까지 같이 다운로드하지는 말고요. 인간답게.
+  </p>
+
+  <textarea id="input" placeholder='여기에 &lt;img ... src="https://..."&gt; 같은 HTML 코드를 통째로 붙여넣기'></textarea>
+
+  <div class="row">
+    <button id="extract">URL 추출</button>
+    <button id="clear">지우기</button>
+  </div>
+
+  <div id="meta" class="msg"></div>
+  <div id="out" class="grid"></div>
+
+<script>
+/* ===== Digital HUD JS (Dark mode + injected UI + utilities) ===== */
+(() => {
+  const $ = (s) => document.querySelector(s);
+
+  const input = $("#input");
+  const btnExtract = $("#extract");
+  const btnClear = $("#clear");
+  const meta = $("#meta");
+  const out = $("#out");
+
+  // ---- HUD topbar injection ----
+  const topbar = document.createElement("div");
+  topbar.className = "hud-topbar";
+  topbar.innerHTML = `
+    <div class="brand">IMG<span>•HUD</span></div>
+    <div class="hud-pill"><span class="hud-dot"></span><span id="hudStatus">READY</span></div>
+    <div class="hud-pill" title="추출 결과 카운트"><span>FOUND</span><b id="hudCount">0</b></div>
+    <div class="hud-pill" title="로컬 시간(시스템 기준)"><span>TIME</span><b id="hudTime">--:--:--</b></div>
+    <div style="margin-left:auto; display:flex; gap:8px; flex-wrap:wrap;">
+      <button id="copyAll" class="ghost" type="button">URL 전체 복사</button>
+      <button id="tryAll" class="ghost" type="button">다운로드 전체 시도</button>
+    </div>
+  `;
+  document.body.insertBefore(topbar, document.body.firstChild);
+
+  const hudStatus = $("#hudStatus");
+  const hudCount = $("#hudCount");
+  const hudTime = $("#hudTime");
+  const btnCopyAll = $("#copyAll");
+  const btnTryAll = $("#tryAll");
+
+  // ---- Toast ----
+  const toast = document.createElement("div");
+  toast.className = "toast";
+  document.body.appendChild(toast);
+
+  let toastTimer = null;
+  function showToast(title, detail = "") {
+    toast.innerHTML = `<b>${escapeHtml(title)}</b>${detail ? `<small>${escapeHtml(detail)}</small>` : ""}`;
+    toast.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toast.classList.remove("show"), 2000);
+  }
+
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, (m) => ({
+      "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
+    }[m]));
+  }
+
+  const decodeAmp = (s) => (s || "").replace(/&amp;/g, "&").trim();
+
+  function pickLargestFromSrcset(srcset) {
+    if (!srcset) return "";
+    const items = srcset.split(",")
+      .map(x => x.trim())
+      .map(x => {
+        const m = x.match(/^(\S+)\s+(\d+)w$/);
+        if (!m) return { url: x.split(/\s+/)[0], w: 0 };
+        return { url: m[1], w: parseInt(m[2], 10) || 0 };
+      })
+      .filter(x => x.url);
+
+    items.sort((a,b) => (b.w - a.w));
+    return items[0]?.url || "";
+  }
+
+  const uniq = (arr) => [...new Set(arr.filter(Boolean))];
+
+  function extractMediaUrls(html) {
+    html = decodeAmp(html);
+
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    const urls = [];
+
+    // img
+    doc.querySelectorAll("img").forEach(img => {
+      const src = decodeAmp(img.getAttribute("src"));
+      const srcset = decodeAmp(img.getAttribute("srcset"));
+      const best = pickLargestFromSrcset(srcset) || src;
+      if (best) urls.push(best);
+    });
+
+    // video + source
+    doc.querySelectorAll("video").forEach(v => {
+      const src = decodeAmp(v.getAttribute("src"));
+      if (src) urls.push(src);
+      v.querySelectorAll("source").forEach(s => {
+        const ss = decodeAmp(s.getAttribute("src"));
+        if (ss) urls.push(ss);
+      });
+    });
+
+    doc.querySelectorAll("source").forEach(s => {
+      const ss = decodeAmp(s.getAttribute("src"));
+      if (ss) urls.push(ss);
+    });
+
+    // meta og:image etc
+    doc.querySelectorAll('meta[property="og:image"], meta[property="og:video"], meta[name="twitter:image"]').forEach(m => {
+      const c = decodeAmp(m.getAttribute("content"));
+      if (c) urls.push(c);
+    });
+
+    // rough grab
+    const rough = html.match(/https?:\/\/[^\s"'<>]+/g) || [];
+    rough.forEach(u => urls.push(decodeAmp(u)));
+
+    const filtered = urls.filter(u =>
+      /\.(png|jpe?g|webp|gif|mp4|mov)(\?|$)/i.test(u) || /cdninstagram|fbcdn|scontent/i.test(u)
+    );
+
+    return uniq(filtered);
+  }
+
+  function guessType(url) {
+    const u = url.toLowerCase();
+    if (/\.(mp4|mov)(\?|$)/.test(u)) return "video";
+    return "image";
+  }
+
+  function filenameFromUrl(url) {
+    try {
+      const u = new URL(url);
+      const path = u.pathname.split("/").pop() || "file";
+      return (path.includes(".") ? path : (path + ".bin")).slice(0, 90);
+    } catch {
+      return "file.bin";
+    }
+  }
+
+async function tryDownload(url) {
+  const name = filenameFromUrl(url);
+
+  // 1) CORS 허용되면 blob으로 저장 시도
+  try {
+    const res = await fetch(url, { mode: "cors" });
+    if (!res.ok) throw new Error("fetch failed");
+    const blob = await res.blob();
+    const objUrl = URL.createObjectURL(blob);
+
+    const a = document.createElement("a");
+    a.href = objUrl;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+
+    setTimeout(() => URL.revokeObjectURL(objUrl), 2000);
+    return;
+  } catch (e) {
+    // 2) CORS 막히면 브라우저는 외부 다운로드를 거부할 수 있음
+    // fallback: 새 탭으로 열어 사용자가 저장
+    openNewTab(url);
+  }
+}
+
+  function openNewTab(url) {
+    window.open(url, "_blank", "noopener");
+  }
+
+  async function copyText(text) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      // fallback
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed";
+      ta.style.left = "-9999px";
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      let ok = false;
+      try { ok = document.execCommand("copy"); } catch { ok = false; }
+      ta.remove();
+      return ok;
+    }
+  }
+
+  let lastUrls = [];
+
+  function render(urls) {
+    lastUrls = urls;
+    out.innerHTML = "";
+    urls.forEach((url) => {
+      const type = guessType(url);
+
+      const card = document.createElement("div");
+      card.className = "card";
+
+      const inner = document.createElement("div");
+      inner.className = "inner";
+
+      const tag = document.createElement("div");
+      tag.className = "tag";
+      tag.innerHTML = `<span class="chip"></span>${type === "video" ? "VIDEO" : "IMAGE"}`;
+
+      const preview = document.createElement("div");
+      preview.className = "preview";
+
+      const media = document.createElement(type === "video" ? "video" : "img");
+      if (type === "video") {
+        media.src = url;
+        media.controls = true;
+      } else {
+        media.src = url;
+        media.alt = "preview";
+        media.loading = "lazy";
+        media.referrerPolicy = "no-referrer";
+        media.crossOrigin = "anonymous";
+      }
+      preview.appendChild(media);
+
+      const p = document.createElement("div");
+      p.className = "url";
+      p.textContent = url;
+
+      const btns = document.createElement("div");
+      btns.className = "btns";
+
+      const bOpen = document.createElement("button");
+      bOpen.textContent = "새 탭";
+      bOpen.onclick = () => openNewTab(url);
+
+      const bCopy = document.createElement("button");
+      bCopy.textContent = "URL 복사";
+      bCopy.onclick = async () => {
+        const ok = await copyText(url);
+        showToast(ok ? "복사 완료" : "복사 실패", ok ? "클립보드에 URL 저장됨" : "브라우저가 막았을 수도");
+      };
+
+      const bDl = document.createElement("button");
+      bDl.textContent = "다운로드 시도";
+      bDl.onclick = () => {
+        tryDownload(url);
+        showToast("다운로드 시도", "브라우저 정책상 실패하면 새 탭에서 저장");
+      };
+
+      btns.appendChild(bOpen);
+      btns.appendChild(bCopy);
+      btns.appendChild(bDl);
+
+      inner.appendChild(tag);
+      inner.appendChild(preview);
+      inner.appendChild(p);
+      inner.appendChild(btns);
+
+      card.appendChild(inner);
+      out.appendChild(card);
+    });
+  }
+
+  function setStatus(text) {
+    hudStatus.textContent = text;
+    meta.dataset.status = text;
+  }
+
+  function updateTime() {
+    const d = new Date();
+    const pad = (n) => String(n).padStart(2, "0");
+    hudTime.textContent = `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  }
+  setInterval(updateTime, 1000);
+  updateTime();
+
+  function summarize(urls) {
+    const imgN = urls.filter(u => guessType(u) === "image").length;
+    const vidN = urls.filter(u => guessType(u) === "video").length;
+    hudCount.textContent = String(urls.length);
+    meta.textContent =
+      `추출된 미디어 URL: ${urls.length}개 (IMAGE ${imgN} / VIDEO ${vidN})\n` +
+      `참고: cross-origin이면 "다운로드 시도"가 브라우저에서 무시될 수 있음.\n` +
+      `그 경우 "새 탭"에서 저장하면 됨.`;
+  }
+
+  function runExtract() {
+    const html = input.value || "";
+    setStatus("SCANNING");
+    const t0 = performance.now();
+    const urls = extractMediaUrls(html);
+    const t1 = performance.now();
+
+    render(urls);
+    summarize(urls);
+    setStatus("READY");
+    showToast("추출 완료", `${urls.length}개 발견 · ${Math.round(t1 - t0)}ms`);
+  }
+
+  btnExtract.onclick = runExtract;
+
+  btnClear.onclick = () => {
+    input.value = "";
+    out.innerHTML = "";
+    meta.textContent = "";
+    hudCount.textContent = "0";
+    lastUrls = [];
+    showToast("초기화", "입력/결과 삭제");
+  };
+
+  btnCopyAll.onclick = async () => {
+    if (!lastUrls.length) {
+      showToast("복사할 게 없음", "먼저 추출부터 하세요");
+      return;
+    }
+    const ok = await copyText(lastUrls.join("\n"));
+    showToast(ok ? "전체 URL 복사" : "복사 실패", ok ? `${lastUrls.length}개 URL` : "브라우저가 막았을 수도");
+  };
+
+  btnTryAll.onclick = () => {
+    if (!lastUrls.length) {
+      showToast("다운로드할 게 없음", "먼저 추출부터 하세요");
+      return;
+    }
+    // 너무 많은 클릭을 한 번에 때리면 브라우저가 화낼 수 있음. 그래서 약간 텀을 둠.
+    let i = 0;
+    const tick = () => {
+      if (i >= lastUrls.length) {
+        showToast("전체 시도 완료", "실패한 건 새 탭에서 저장");
+        return;
+      }
+      tryDownload(lastUrls[i]);
+      i++;
+      setTimeout(tick, 220);
+    };
+    showToast("전체 다운로드 시도", `${lastUrls.length}개`);
+    tick();
+  };
+
+  // ---- Keyboard shortcuts ----
+  // Ctrl+Enter: extract, Esc: clear
+  window.addEventListener("keydown", (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+      e.preventDefault();
+      runExtract();
+    }
+    if (e.key === "Escape") {
+      e.preventDefault();
+      btnClear.click();
+    }
+  });
+
+  // initial meta
+  meta.textContent =
+    "HTML을 붙여넣고 [URL 추출]을 누르세요.\n" +
+    "단축키: Ctrl+Enter(추출), Esc(초기화)";
+})();
+</script>
+
+</body>
+</html>
