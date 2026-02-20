@@ -211,6 +211,27 @@ button.ghost{
   color: var(--muted);
 }
 
+/* ✅ URL input (추가) */
+input.urlInput{
+  flex: 1;
+  min-width: 280px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(0,229,255,.20);
+  background: linear-gradient(180deg, rgba(8,14,24,.70), rgba(8,14,24,.45));
+  color: var(--text);
+  box-shadow: var(--shadow2), 0 0 0 1px rgba(166,9,61,.08) inset;
+  outline: none;
+  font-size: 14px;
+}
+input.urlInput:focus{
+  border-color: rgba(0,229,255,.55);
+  box-shadow:
+    var(--shadow2),
+    0 0 0 4px rgba(0,229,255,.10),
+    0 0 22px rgba(0,229,255,.12);
+}
+
 #meta{
   margin: 0 16px 14px;
   padding: 12px 14px;
@@ -382,9 +403,15 @@ img, video{
 
   <textarea id="input" placeholder='여기에 &lt;img ... src="https://..."&gt; 같은 HTML 코드를 통째로 붙여넣기'></textarea>
 
+  <!-- ✅ URL 입력 → HTML 가져오기 UI (추가) -->
   <div class="row">
-    <button id="extract">URL 추출</button>
-    <button id="clear">지우기</button>
+    <input id="urlInput" class="urlInput" placeholder="https://... (URL 입력 후 HTML 가져오기)" />
+    <button id="fetchHtml" class="secondary" type="button">URL → HTML 불러오기</button>
+  </div>
+
+  <div class="row">
+    <button id="extract" type="button">URL 추출</button>
+    <button id="clear" type="button">지우기</button>
   </div>
 
   <div id="meta" class="msg"></div>
@@ -400,6 +427,10 @@ img, video{
   const btnClear = $("#clear");
   const meta = $("#meta");
   const out = $("#out");
+
+  // ✅ URL fetch UI (추가)
+  const urlInput = $("#urlInput");
+  const btnFetchHtml = $("#fetchHtml");
 
   // ---- HUD topbar injection ----
   const topbar = document.createElement("div");
@@ -522,31 +553,30 @@ img, video{
     }
   }
 
-async function tryDownload(url) {
-  const name = filenameFromUrl(url);
+  async function tryDownload(url) {
+    const name = filenameFromUrl(url);
 
-  // 1) CORS 허용되면 blob으로 저장 시도
-  try {
-    const res = await fetch(url, { mode: "cors" });
-    if (!res.ok) throw new Error("fetch failed");
-    const blob = await res.blob();
-    const objUrl = URL.createObjectURL(blob);
+    // 1) CORS 허용되면 blob으로 저장 시도
+    try {
+      const res = await fetch(url, { mode: "cors" });
+      if (!res.ok) throw new Error("fetch failed");
+      const blob = await res.blob();
+      const objUrl = URL.createObjectURL(blob);
 
-    const a = document.createElement("a");
-    a.href = objUrl;
-    a.download = name;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
+      const a = document.createElement("a");
+      a.href = objUrl;
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
 
-    setTimeout(() => URL.revokeObjectURL(objUrl), 2000);
-    return;
-  } catch (e) {
-    // 2) CORS 막히면 브라우저는 외부 다운로드를 거부할 수 있음
-    // fallback: 새 탭으로 열어 사용자가 저장
-    openNewTab(url);
+      setTimeout(() => URL.revokeObjectURL(objUrl), 2000);
+      return;
+    } catch (e) {
+      // 2) CORS 막히면 fallback: 새 탭으로 열어 사용자가 저장
+      openNewTab(url);
+    }
   }
-}
 
   function openNewTab(url) {
     window.open(url, "_blank", "noopener");
@@ -721,12 +751,66 @@ async function tryDownload(url) {
     tick();
   };
 
+  // ===== ✅ URL → HTML 가져오기 (추가) =====
+  // 브라우저에서 임의 URL HTML을 직접 가져오면 CORS로 막히는 게 보통이라,
+  // 테스트용으로 공개 프록시(AllOrigins)를 사용. (안정성/차단은 보장 못 함)
+  const PROXY_PREFIX = "https://api.allorigins.win/raw?url=";
+
+  function normalizeUrl(u){
+    u = (u || "").trim();
+    if (!u) return "";
+    if (!/^https?:\/\//i.test(u)) u = "https://" + u;
+    return u;
+  }
+
+  async function fetchHtmlThroughProxy(targetUrl){
+    const u = normalizeUrl(targetUrl);
+    if (!u) throw new Error("URL이 비어있음");
+
+    const res = await fetch(PROXY_PREFIX + encodeURIComponent(u), { cache: "no-store" });
+    if (!res.ok) throw new Error("HTML 요청 실패: " + res.status);
+    return await res.text();
+  }
+
+  btnFetchHtml.onclick = async () => {
+    try{
+      const u = urlInput.value;
+      setStatus("FETCHING");
+      meta.textContent =
+        "HTML 가져오는 중...\n" +
+        "참고: CORS/봇차단/로그인 페이지면 실패하거나 엉뚱한 HTML이 올 수 있음.\n" +
+        "그건 네 잘못이 아니라 인터넷이 원래 그런 곳이라 그렇습니다.";
+
+      const t0 = performance.now();
+      const html = await fetchHtmlThroughProxy(u);
+      const t1 = performance.now();
+
+      input.value = html;
+      runExtract();
+
+      setStatus("READY");
+      showToast("HTML 로드 완료", `${Math.round(t1 - t0)}ms · 추출 실행됨`);
+    }catch(e){
+      setStatus("ERROR");
+      showToast("HTML 로드 실패", String(e?.message || e));
+      meta.textContent =
+        "URL에서 HTML을 못 가져왔습니다.\n" +
+        "- 가장 흔한 이유: CORS / 봇차단 / 로그인 필요 / 지역 제한\n" +
+        "- 해결(정석): 프록시 서버(로컬/서버) 하나 붙여서 거기서 HTML을 가져오기\n\n" +
+        "에러: " + String(e?.message || e);
+    }
+  };
+
   // ---- Keyboard shortcuts ----
-  // Ctrl+Enter: extract, Esc: clear
+  // Ctrl+Enter: extract, Esc: clear, Shift+Enter: URL fetch+extract
   window.addEventListener("keydown", (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
       e.preventDefault();
       runExtract();
+    }
+    if (e.shiftKey && e.key === "Enter") {
+      e.preventDefault();
+      btnFetchHtml.click();
     }
     if (e.key === "Escape") {
       e.preventDefault();
@@ -736,8 +820,9 @@ async function tryDownload(url) {
 
   // initial meta
   meta.textContent =
-    "HTML을 붙여넣고 [URL 추출]을 누르세요.\n" +
-    "단축키: Ctrl+Enter(추출), Esc(초기화)";
+    "방법 1) HTML을 붙여넣고 [URL 추출]\n" +
+    "방법 2) URL 입력 후 [URL → HTML 불러오기]로 가져와서 자동 추출\n" +
+    "단축키: Ctrl+Enter(추출), Shift+Enter(URL 불러오기+추출), Esc(초기화)";
 })();
 </script>
 
